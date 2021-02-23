@@ -8,6 +8,7 @@ import datetime
 # import sys
 # import typing
 # from collections import Counter
+import math
 from typing import List, Dict, Union, Optional, Tuple
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
@@ -109,7 +110,7 @@ def place_data_into_new_master_format(master_data: Dict):  # throw away
 BASELINE_TYPES = {
     "Re-baseline this quarter": "quarter",
 }
-CDG_GROUP_DICT = {"Corporate Finance": "CF", "Group Finance": "GP"}
+CDG_GROUP_DICT = {"Corporate Finance": "CF", "Group Finance": "GF"}
 BC_STAGE_DICT = {
     "Strategic Outline Case": "SOBC",
     "SOBC": "SOBC",
@@ -690,264 +691,112 @@ class DandelionData:
         self.group = []
         self.iter_list = []
         self.d_data = {}
+        self.d_list = []
         self.get_data()
 
-    def get_data(self) -> None:
+    def get_data(self):
+        self.group = self.master.master_data[0].projects
+        input_g_list = ["CF", "GF"]  # first outer circle
+        # input_g_list = ["FBC", "OBC", "SOBC", "pre-SOBC"]  # first outer circle
+        # cal group angle
+        if len(input_g_list) == 2:
+            g_ang_list = [0, 225, 315]
+        # g_ang = 270/len(input_g_list)  # group angle
+        # g_ang_list = []
+        # for i in range(6):
+        #     g_ang_list.append(g_ang * i)
+        # del g_ang_list[4]
 
-        if "baseline" in self.kwargs:
-            self.group = get_group(
-                self.master, str(self.master.current_quarter), self.kwargs
-            )
-            if self.kwargs["baseline"] == "standard":
-                self.iter_list = ["current", "last", "bl_one"]
-            elif self.kwargs["baseline"] == "all":
-                self.iter_list = ["current", "last", "bl_one", "bl_two", "bl_three"]
-            else:
-                self.iter_list = self.kwargs["baseline"]
-
-        elif "quarter" in self.kwargs:
-            if self.kwargs["quarter"] == ["standard"]:
-                self.iter_list = [
-                    self.master.quarter_list[0],
-                    self.master.quarter_list[1],
-                ]
-            else:
-                self.iter_list = self.kwargs["quarter"]
-
-        lower_dict = {}
-        for idx, tp in enumerate(self.iter_list):  # tp is time period
-            data = []
-            total = 0
-            if "quarter" in self.kwargs:
-                self.group = get_group(self.master, str(tp), self.kwargs)
-                q_idx = self.master.quarter_list.index(str(tp))
-            for p in self.group:
-                if "baseline" in self.kwargs:
-                    bl_index = self.master.bl_index[self.baseline_type][p]
-                    try:
-                        p_data = self.master.master_data[bl_index[idx]].data[p]
-                    except IndexError:  # some p bls only three
-                        continue
-                elif "quarter" in self.kwargs:
-                    p_data = self.master.master_data[q_idx].data[p]
-                abb = self.master.abbreviations[p]["abb"]  # abbreviations
-                cost = p_data["Total Forecast"]
-                c_str = dandelion_project_text(cost, p)  # cost_string
-                proj_info = abb + ",\n" + c_str
-                if cost is not None:
-                    total += cost
-                    if cost > 70:
-                        cost = cost/2
-                if cost is None:
-                    cost = 10
+        dft_g_list = []
+        dft_g_dict = {}
+        dft_l_group_dict = {}
+        p_total = 0  # portfolio total
+        for i, g in enumerate(input_g_list):
+            dft_l_group = self.master.dft_groups["Q3 20/21"][g]
+            g_total = 0
+            dft_l_group_list = []
+            for p in dft_l_group:
+                p_data = self.master.master_data[0].data[p]
+                b_size = p_data["Total Forecast"]
+                if b_size is None:
+                    b_size = 25
                 rag = p_data["Departmental DCA"]
                 colour = COLOUR_DICT[convert_rag_text(rag)]
-                group = CDG_GROUP_DICT[p_data["CDG Group"]]
-                data.append((proj_info, cost, colour, rag, abb, group))
-            data.sort(key=lambda x: x[1])
-            # r_data = reversed(data)
-            # place = int(len(data) / 2)
-            # data.insert(place, ("Total", total, "#808080", rag, "Total", "Overall"))
-            # output_list.insert(place, ("total", total, colour_dict["W"]))
-            # return reversed(output_list)
-            # return output_list
-            projects, pi, c, r, a, g = zip(*data)  # pi is project_info, c is colour and r is rag
-            lower_dict[tp] = {"projects": projects, "cost": pi, "colour": c, "rag": r, "abb": a, "group": g}
-        self.d_data = lower_dict
+                g_total += b_size
+                dft_l_group_list.append((math.sqrt(b_size), colour, self.master.abbreviations[p]['abb']))
+            # group data
+            x_axis = 0 + 120 * math.cos(math.radians(g_ang_list[i + 1]))
+            y_axis = 0 + 100 * math.sin(math.radians(g_ang_list[i + 1]))
+            # list is tuple axis point, bubble size, colour, line style, line color, text position
+            dft_g_list.append(((x_axis, y_axis),
+                               math.sqrt(g_total),
+                               '#a0c1d5',
+                               g,
+                               'dashed',
+                               'grey',
+                               ('center', 'center')))
+            dft_g_dict[g] = [(x_axis, y_axis), math.sqrt(g_total)/3]  # used for placement of circles
+            # project data
+            dft_l_group_dict[g] = list(reversed(sorted(dft_l_group_list)))
+            #portfolio data
+            p_total += g_total
+        dft_g_list.append(((0, 0), math.sqrt(p_total), '#a0c1d5', "CDG Portfolio", "dashed", "grey", ('center', 'center')))
 
-
-def dandelion_data_into_wb(d_data: DandelionData) -> workbook:
-    """
-    Simple function that returns data required for the dandelion graph.
-    """
-    wb = Workbook()
-    for tp in d_data.d_data.keys():
-        ws = wb.create_sheet(
-            make_file_friendly(tp)
-        )  # creating worksheets. names restricted to 30 characters.
-        ws.title = make_file_friendly(tp)  # title of worksheet
-        for i, project in enumerate(d_data.d_data[tp]["projects"]):
-            ws.cell(row=2 + i, column=1).value = d_data.d_data[tp]["group"][i]
-            ws.cell(row=2 + i, column=2).value = d_data.d_data[tp]["abb"][i]
-            ws.cell(row=2 + i, column=3).value = project
-            ws.cell(row=2 + i, column=4).value = int(d_data.d_data[tp]["cost"][i])
-            ws.cell(row=2 + i, column=5).value = d_data.d_data[tp]["rag"][i]
-
-        ws.cell(row=1, column=1).value = "Group"
-        ws.cell(row=1, column=2).value = "Project"
-        ws.cell(row=1, column=3).value = "Graph details"
-        ws.cell(row=1, column=4).value = "WLC (forecast)"
-        ws.cell(row=1, column=5).value = "DCA"
-
-    wb.remove(wb["Sheet"])
-    return wb
-
-
-class DandelionChart:
-    def __init__(self, area, bubble_spacing=0):
-        """
-        Setup for bubble collapse.
-
-        @param area: array-like. Area of the bubbles.
-        @param bubble_spacing: float, default:0. Minimal spacing between bubbles after collapsing.
-
-        @note
-        If "area" is sorted, the results might look weird.
-        """
-        area = np.asarray(area)
-        r = np.sqrt(area / np.pi)
-
-        self.bubble_spacing = bubble_spacing
-        self.bubbles = np.ones((len(area), 4))
-        self.bubbles[:, 2] = r
-        self.bubbles[:, 3] = area
-        self.maxstep = 2 * self.bubbles[:, 2].max() + self.bubble_spacing
-        self.step_dist = self.maxstep / 2
-
-        # calculate initial grid layout for bubbles
-        length = np.ceil(np.sqrt(len(self.bubbles)))
-        grid = np.arange(length) * self.maxstep  # arrange might cause trouble
-        gx, gy = np.meshgrid(grid, grid)
-        self.bubbles[:, 0] = gx.flatten()[: len(self.bubbles)]
-        self.bubbles[:, 1] = gy.flatten()[: len(self.bubbles)]
-
-        self.com = self.center_of_mass()
-
-    def center_of_mass(self):
-        return np.average(self.bubbles[:, :2], axis=0, weights=self.bubbles[:, 3])
-
-    def center_distance(self, bubble, bubbles):
-        return np.hypot(bubble[0] - bubbles[:, 0], bubble[1] - bubbles[:, 1])
-
-    def outline_distance(self, bubble, bubbles):
-        center_distance = self.center_distance(bubble, bubbles)
-        return center_distance - bubble[2] - bubbles[:, 2] - self.bubble_spacing
-
-    def check_collisions(self, bubble, bubbles):
-        distance = self.outline_distance(bubble, bubbles)
-        return len(distance[distance < 0])
-
-    def collides_with(self, bubble, bubbles):
-        distance = self.outline_distance(bubble, bubbles)
-        idx_min = np.argmin(distance)
-        return idx_min if type(idx_min) == np.ndarray else [idx_min]
-
-    def collapse(self, n_iterations=50):
-        """
-        Move bubbles to the center of mass.
-
-        @param n_iterations: int, default: 50. Number of moves to perform.
-        @return:
-        """
-        for _i in range(n_iterations):
-            moves = 0
-            for i in range(len(self.bubbles)):
-                rest_bub = np.delete(self.bubbles, i, 0)
-                # try to move directly towards the center of mass
-                # direction vector from bubble to the center of mass
-                dir_vec = self.com - self.bubbles[i, :2]
-
-                # shorten direction vector to have length of 1
-                try:
-                    dir_vec = dir_vec / np.sqrt(dir_vec.dot(dir_vec))
-                except (RuntimeWarning, RuntimeError):
-                    dir_vec = 1
-
-                # calculate new bubble position
-                new_point = self.bubbles[i, :2] + dir_vec * self.step_dist
-                new_bubble = np.append(new_point, self.bubbles[i, 2:4])
-
-                # check whether new bubble collides with other bubbles
-                if not self.check_collisions(new_bubble, rest_bub):
-                    self.bubbles[i, :] = new_bubble
-                    self.com = self.center_of_mass()
-                    moves += 1
+        for g in dft_l_group_dict.keys():
+            lg = dft_l_group_dict[g]  # local group
+            ang = 360/len(lg)
+            ang_list = []
+            for i in range(len(lg)+1):
+                ang_list.append(ang*i)
+            for i, p in enumerate(lg):
+                a = dft_g_dict[g][0][0]
+                b = dft_g_dict[g][0][1]
+                if len(lg) <= 8:
+                    x_axis = a + (dft_g_dict[g][1] + 20) * math.cos(math.radians(ang_list[i+1]))
+                    y_axis = b + (dft_g_dict[g][1] + 20) * math.sin(math.radians(ang_list[i+1]))
                 else:
-                    # try to move around a bubble that you collide with
-                    # find colliding bubble
-                    for colliding in self.collides_with(new_bubble, rest_bub):
-                        # calculate direction vector
-                        dir_vec = rest_bub[colliding, :2] - self.bubbles[i, :2]
-                        dir_vec = dir_vec / np.sqrt(dir_vec.dot(dir_vec))
-                        # calculate orthogonal vector
-                        orth = np.array([dir_vec[1], -dir_vec[0]])
-                        # test which direction to go
-                        new_point1 = self.bubbles[i, :2] + orth * self.step_dist
-                        new_point2 = self.bubbles[i, :2] - orth * self.step_dist
-                        dist1 = self.center_distance(self.com, np.array([new_point1]))
-                        dist2 = self.center_distance(self.com, np.array([new_point2]))
-                        new_point = new_point1 if dist1 < dist2 else new_point2
-                        new_bubble = np.append(new_point, self.bubbles[i, 2:4])
-                        if not self.check_collisions(new_bubble, rest_bub):
-                            self.bubbles[i, :] = new_bubble
-                            self.com = self.center_of_mass()
+                    x_axis = a + (dft_g_dict[g][1] + 40) * math.cos(math.radians(ang_list[i + 1]))
+                    y_axis = b + (dft_g_dict[g][1] + 40) * math.sin(math.radians(ang_list[i + 1]))
+                b_size = p[0]
+                colour = p[1]
+                name = p[2]
+                if 280 >= ang_list[i+1] >= 80:
+                    text_angle = ('right', 'bottom')
+                if 100 >= ang_list[i+1] or ang_list[i+1] >= 260:
+                    text_angle = ('left', 'bottom')
+                if 279 >= ang_list[i+1] >= 261:
+                    text_angle = ('center', 'top')
+                if 99 >= ang_list[i+1] >= 81:
+                    text_angle = ('center', 'bottom')
+                dft_g_list.append(((x_axis, y_axis), b_size, colour, name, "solid", colour, text_angle))
 
-            if moves / len(self.bubbles) < 0.1:
-                self.step_dist = self.step_dist / 2
-
-    def plot(self, ax, labels, colors):
-        """
-        Draw the bubble plot.
-
-        @param ax: matplotlib.axes.Axes
-        @param labels: list. labels of the bubbles.
-        @param colors: list. colour of the bubbles.
-        @return:
-        """
-        for i in range(len(self.bubbles)):
-            circ = plt.Circle(self.bubbles[i, :2], self.bubbles[i, 2], color=colors[i])
-            ax.add_patch(circ)
-            ax.text(
-                *self.bubbles[i, :2],
-                labels[i],
-                horizontalalignment="center",
-                verticalalignment="center",
-            )
+        self.d_list = dft_g_list
 
 
-def run_dandelion_matplotlib_chart(dandelion: Dict[str, list], **kwargs) -> plt.figure:
-    bubble_chart = DandelionChart(area=dandelion["cost"], bubble_spacing=1)
-    bubble_chart.collapse()
-    fig, ax = plt.subplots(subplot_kw=dict(aspect="equal"))
-    bubble_chart.plot(ax, dandelion["projects"], dandelion["colour"])
-    ax.axis("off")
-    ax.relim()
-    ax.autoscale_view()
-    # ax.set_title(str(DandelionData.)
-    if "chart" in kwargs:
-        if kwargs["chart"]:
-            plt.show()
-    return fig
+def make_a_dandelion_auto(dlion_data: DandelionData):
+    fig, ax = plt.subplots()
+    # ax.set_facecolor('xkcd:salmon')
+    ax.set_facecolor('#a0c1d5')
+    # plt.figure(figsize=(20, 10))
+    # fig(dpi=600)
+    for c in range(len(dlion_data.d_list)):
+        circle = plt.Circle(dlion_data.d_list[c][0],
+                            radius=dlion_data.d_list[c][1],
+                            fc=dlion_data.d_list[c][2],  # face colour
+                            linestyle=dlion_data.d_list[c][4],
+                            ec=dlion_data.d_list[c][5])  # edge colour
+        ax.add_patch(circle)
+        ax.annotate(dlion_data.d_list[c][3],
+                    xy=dlion_data.d_list[c][0],
+                    fontsize=6,
+                    horizontalalignment=dlion_data.d_list[c][6][0],
+                    verticalalignment=dlion_data.d_list[c][6][1])
+        # plt.gca().add_patch(circle)
 
+    plt.axis('scaled')
+    plt.axis('off')
+    fig.savefig(root_path / "output/dandelion.pdf", transparent=True)
+    plt.show()
 
-def dandelion_project_text(number: int, project: str) -> str:
-    if number is None:
-        return "TBC"
-    else:
-        total_len = len(str(int(number)))
-        try:
-            if total_len <= 2:
-                return "£" + str(number) + "m"
-            if total_len <= 3:
-                round_total = int(round(number, -1))
-                return "£" + str(round_total) + "m"
-            if total_len == 4:
-                round_total = int(round(number, -2))
-                return "£" + str(round_total)[0] + "," + str(round_total)[1] + "bn"
-            if total_len == 5:
-                round_total = int(round(number, -2))
-                return "£" + str(round_total)[:2] + "," + str(round_total)[2] + "bn"
-            if total_len > 6:
-                print(
-                    "Check total forecast and cost data reported by "
-                    + project
-                    + " total is £"
-                    + str(number)
-                    + "m"
-                )
-        except ValueError:
-            print(
-                "Check total forecast and cost data reported by "
-                + project
-                + " it is not reporting a number"
-            )
+    # return plt
+

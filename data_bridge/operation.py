@@ -5,10 +5,7 @@ from data_bridge.data import (
     Master,
     overall_dashboard,
     get_project_information,
-    DandelionData,
-    run_dandelion_matplotlib_chart,
-    dandelion_data_into_wb,
-    DandelionChart
+    DandelionData, make_a_dandelion_auto,
 )
 
 
@@ -20,5 +17,5 @@ m = Master(get_master_data(), get_project_information())
 # db_m = root_path / "input/cdg_dashboard_master.xlsx"   # dashboard master
 # db = overall_dashboard(m, db_m)
 # db.save(root_path / "output/cdg_dashboard_compiled.xlsx")
-dan = DandelionData(m, quarter=["Q3 20/21"], group=["CF"])
-run_dandelion_matplotlib_chart(dan.d_data["Q3 20/21"], chart=True)
+dan_l = DandelionData(m)
+make_a_dandelion_auto(dan_l)
