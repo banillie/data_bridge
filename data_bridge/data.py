@@ -22,11 +22,11 @@ from pathlib import Path
 
 # from dateutil.parser import ParserError
 from docx import Document, table
-# from docx.enum.section import WD_SECTION_START, WD_ORIENTATION
-# from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.enum.section import WD_SECTION_START, WD_ORIENTATION
+from docx.enum.text import WD_ALIGN_PARAGRAPH
 # from docx.oxml import parse_xml
 # from docx.oxml.ns import nsdecls
-# from docx.shared import Pt, Cm, RGBColor, Inches
+from docx.shared import Pt, Cm, RGBColor, Inches
 # from matplotlib import cm
 # from matplotlib.patches import Wedge, Rectangle, Circle
 from openpyxl import load_workbook, Workbook
@@ -46,7 +46,7 @@ from analysis_engine.data import (
     convert_rag_text,
     rag_txt_list,
     black_text, fill_colour_list, get_group, COLOUR_DICT, make_file_friendly, wd_heading, key_contacts, dca_table,
-    dca_narratives, open_word_doc,
+    dca_narratives, open_word_doc, set_col_widths, make_columns_bold, change_text_size,
 )
 
 logging.basicConfig(
@@ -814,6 +814,7 @@ def compile_p_report_cdg(
     wd_heading(doc, project_info, project_name)
     key_contacts(doc, master, project_name)
     dca_table(doc, master, project_name)
+    project_report_meta_data(doc, master, project_name)
     dca_narratives(doc, master, project_name)
     # costs = CostData(master, group=[project_name], baseline=["standard"])
     # benefits = BenefitsData(master, project_name)
@@ -870,3 +871,49 @@ def run_p_reports_cdg(master: Master, **kwargs) -> None:
             root_path / "output/{}_report_{}.docx".format(abb, qrt)
         )  # add quarter here
 
+
+def project_report_meta_data(
+        doc: Document,
+        master: Master,
+        project_name: str,
+):
+    """Meta data table"""
+    # doc.add_section(WD_SECTION_START.NEW_PAGE)
+    # paragraph = doc.add_paragraph()
+    # paragraph.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    # paragraph.add_run("key project MI").bold = True
+
+    """Costs meta data"""
+    # this chuck is pretty messy because the data is messy
+    run = doc.add_paragraph().add_run("Key meta data")
+    font = run.font
+    font.bold = True
+    # font.underline = True
+    t = doc.add_table(rows=1, cols=4)
+    hdr_cells = t.rows[0].cells
+    hdr_cells[0].text = "WLC:"
+    try:
+        hdr_cells[1].text = (
+                "£"
+                + str(round(master.master_data[0].data[project_name]["Total Forecast"]))
+                + "m"
+        )
+    except TypeError:
+        hdr_cells[1].text = "TBC"
+    hdr_cells[2].text = "Business Case"
+    hdr_cells[3].text = str(master.master_data[0].data[project_name]["CDG approval point"])
+
+    row_cells = t.add_row().cells
+    row_cells[0].text = "Income:"
+    row_cells[1].text = ""
+    row_cells[2].text = "VFM:"
+    row_cells[3].text = str(master.master_data[0].data[project_name]["VfM Category single entry"])
+
+    # set column width
+    column_widths = (Cm(4), Cm(3), Cm(4), Cm(3))
+    set_col_widths(t, column_widths)
+    # make column keys bold
+    make_columns_bold([t.columns[0], t.columns[2]])
+    change_text_size([t.columns[0], t.columns[1], t.columns[2], t.columns[3]], 10)
+
+    return doc
