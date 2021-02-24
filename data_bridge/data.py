@@ -12,7 +12,7 @@ import math
 from typing import List, Dict, Union, Optional, Tuple
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
-# from datetime import timedelta, date
+from datetime import timedelta, date
 #
 # from dateutil import parser
 import numpy as np
@@ -21,14 +21,14 @@ import platform
 from pathlib import Path
 
 # from dateutil.parser import ParserError
-# from docx import Document, table
+from docx import Document, table
 # from docx.enum.section import WD_SECTION_START, WD_ORIENTATION
 # from docx.enum.text import WD_ALIGN_PARAGRAPH
 # from docx.oxml import parse_xml
 # from docx.oxml.ns import nsdecls
 # from docx.shared import Pt, Cm, RGBColor, Inches
-from matplotlib import cm
-from matplotlib.patches import Wedge, Rectangle, Circle
+# from matplotlib import cm
+# from matplotlib.patches import Wedge, Rectangle, Circle
 from openpyxl import load_workbook, Workbook
 
 # from openpyxl.chart import BubbleChart, Reference, Series
@@ -38,13 +38,15 @@ from openpyxl.styles.differential import DifferentialStyle
 from openpyxl.workbook import workbook
 from textwrap import wrap
 import logging
+from pdf2image import convert_from_path
 from analysis_engine.data import (
     convert_bc_stage_text,
     plus_minus_days,
     concatenate_dates,
     convert_rag_text,
     rag_txt_list,
-    black_text, fill_colour_list, get_group, COLOUR_DICT, make_file_friendly,
+    black_text, fill_colour_list, get_group, COLOUR_DICT, make_file_friendly, wd_heading, key_contacts, dca_table,
+    dca_narratives, open_word_doc,
 )
 
 logging.basicConfig(
@@ -773,12 +775,9 @@ class DandelionData:
         self.d_list = dft_g_list
 
 
-def make_a_dandelion_auto(dlion_data: DandelionData):
+def make_a_dandelion_auto_cdg(dlion_data: DandelionData):
     fig, ax = plt.subplots()
-    # ax.set_facecolor('xkcd:salmon')
     ax.set_facecolor('#a0c1d5')
-    # plt.figure(figsize=(20, 10))
-    # fig(dpi=600)
     for c in range(len(dlion_data.d_list)):
         circle = plt.Circle(dlion_data.d_list[c][0],
                             radius=dlion_data.d_list[c][1],
@@ -795,8 +794,79 @@ def make_a_dandelion_auto(dlion_data: DandelionData):
 
     plt.axis('scaled')
     plt.axis('off')
-    fig.savefig(root_path / "output/dandelion.pdf", transparent=True)
     plt.show()
 
-    # return plt
+    return plt
+
+
+def convert_pdf_to_png():
+    pages = convert_from_path(root_path / "output/dandelion.pdf", 500)
+    for page in pages:
+        page.save(root_path / "output/dandelion.jpeg", 'JPEG')
+
+
+def compile_p_report_cdg(
+        doc: Document,
+        project_info: Dict[str, Union[str, int, date, float]],
+        master: Master,
+        project_name: str,
+) -> Document:
+    wd_heading(doc, project_info, project_name)
+    key_contacts(doc, master, project_name)
+    dca_table(doc, master, project_name)
+    dca_narratives(doc, master, project_name)
+    # costs = CostData(master, group=[project_name], baseline=["standard"])
+    # benefits = BenefitsData(master, project_name)
+    # milestones = MilestoneData(master, group=[project_name], baseline=["standard"])
+    # project_report_meta_data(doc, costs, milestones, benefits, project_name)
+    # change_word_doc_landscape(doc)
+    # cost_profile = cost_profile_graph(costs, show="No")
+    # put_matplotlib_fig_into_word(doc, cost_profile, transparent=False, size=8)
+    # total_profile = total_costs_benefits_bar_chart(costs, benefits, show="No")
+    # put_matplotlib_fig_into_word(doc, total_profile, transparent=False, size=8)
+    # #  handling of no milestones within filtered period.
+    # ab = master.abbreviations[project_name]["abb"]
+    # try:
+    #     # milestones.get_milestones()
+    #     # milestones.get_chart_info()
+    #     milestones.filter_chart_info(dates=["1/9/2020", "30/12/2022"])
+    #     milestones_chart = milestone_chart(
+    #         milestones,
+    #         blue_line="ipdc_date",
+    #         title=ab + " schedule (2021 - 22)",
+    #         show="No",
+    #     )
+    #     put_matplotlib_fig_into_word(doc, milestones_chart, transparent=False, size=8)
+    #     # print_out_project_milestones(doc, milestones, project_name)
+    # except ValueError:  # extends the time period.
+    #     milestones = MilestoneData(master, project_name)
+    #     # milestones.get_milestones()
+    #     # milestones.get_chart_info()
+    #     milestones.filter_chart_info(dates=["1/9/2020", "30/12/2024"])
+    #     milestones_chart = milestone_chart(
+    #         milestones,
+    #         blue_line="ipdc_date",
+    #         title=ab + " schedule (2021 - 24)",
+    #         show="No",
+    #     )
+    #     put_matplotlib_fig_into_word(doc, milestones_chart)
+    # print_out_project_milestones(doc, milestones, project_name)
+    # change_word_doc_portrait(doc)
+    # project_scope_text(doc, master, project_name)
+    return doc
+
+
+def run_p_reports_cdg(master: Master, **kwargs) -> None:
+    group = master.current_projects
+    # group = get_group(master, str(master.current_quarter), kwargs)
+
+    for p in group:
+        print("Compiling summary for " + p)
+        report_doc = open_word_doc(root_path / "input/summary_temp.docx")
+        qrt = make_file_friendly(str(master.master_data[0].quarter))
+        output = compile_p_report_cdg(report_doc, get_project_information(), master, p)
+        abb = master.abbreviations[p]["abb"]
+        output.save(
+            root_path / "output/{}_report_{}.docx".format(abb, qrt)
+        )  # add quarter here
 
