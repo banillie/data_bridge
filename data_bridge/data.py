@@ -422,9 +422,6 @@ class CostData:
         # self.get_stackplot_data()
 
     def get_cost_totals(self) -> None:
-        """Returns lists containing the sum total of group (of projects) costs,
-        sliced in different ways. Cumbersome for loop used at the moment, but
-        is the least cumbersome loop I could design!"""
 
         self.iter_list = get_iter_list(self.kwargs, self.master)
         self.start_group = get_group(self.master, self.iter_list[0], self.kwargs)
@@ -434,7 +431,6 @@ class CostData:
             self.group = get_group(self.master, tp, self.kwargs)
             profiled = 0
             for project_name in self.group:
-                print(project_name)
                 p_data = get_correct_p_data(
                     self.kwargs, self.master, self.baseline_type, project_name, tp
                 )
@@ -956,6 +952,7 @@ def get_dandelion_type_total(
         if kwargs["type"] == "spent":
             cost = CostData(master, quarter=[tp], group=[g])  # group costs data
             return cost.c_totals[tp]["spent"]
+        # No benefits yet
         # if kwargs["type"] == "benefits":
         #     benefits = BenefitsData(master, quarter=[tp], group=[g])
         #     return benefits.b_totals[tp]["total"]
@@ -1004,7 +1001,7 @@ class DandelionData:
                 pf_colour = COLOUR_DICT[self.kwargs["pc"]]
                 pf_colour_edge = COLOUR_DICT[self.kwargs["pc"]]
             else:
-                pf_colour = "#FFFFFF"
+                pf_colour = "#FFFFFF" # white
                 pf_colour_edge = "grey"
             pf_text = "Portfolio\n" + dandelion_number_text(
                 pf_wlc
@@ -1033,6 +1030,8 @@ class DandelionData:
                         math.radians(g_ang_l[i])
                     )
                     g_text = g + "\n" + dandelion_number_text(g_wlc)  # group text
+                    if g_wlc == 0:
+                        g_wlc = pf_wlc/20
                     g_d[g] = {
                         "axis": (y_axis, x_axis),
                         "r": math.sqrt(g_wlc),
@@ -1049,6 +1048,8 @@ class DandelionData:
                     g_d = {}
                     pf_wlc = g_wlc * 3
                     g_text = g + "\n" + dandelion_number_text(g_wlc)  # group text
+                    if g_wlc == 0:
+                        g_wlc = 5
                     g_d[g] = {
                         "axis": (0, 0),
                         "r": math.sqrt(g_wlc),
@@ -1082,19 +1083,19 @@ class DandelionData:
                     p_values_list, p_list = zip(*l_g_d[g])
                 except ValueError:  # handles no projects in l_g_d list
                     continue
-                if len(p_list) > 3 or len(self.group) == 1:
+                if len(p_list) > 2 or len(self.group) == 1:
                     ang_l = cal_group_angle(360, p_list, all=True)
                 else:
                     if len(p_list) == 1:
                         ang_l = [g_d[g]["angle"]]
                     if len(p_list) == 2:
                         ang_l = [g_d[g]["angle"], g_d[g]["angle"] + 60]
-                    if len(p_list) == 3:
-                        ang_l = [
-                            g_d[g]["angle"],
-                            g_d[g]["angle"] + 60,
-                            g_d[g]["angle"] + 120,
-                        ]
+                    # if len(p_list) == 3:
+                    #     ang_l = [
+                    #         g_d[g]["angle"],
+                    #         g_d[g]["angle"] + 60,
+                    #         g_d[g]["angle"] + 120,
+                    #     ]
 
                 for i, p in enumerate(p_list):
                     p_value = p_values_list[i]
@@ -1116,15 +1117,23 @@ class DandelionData:
                     # if p in self.master.dft_groups[tp]["GMPP"]:
                     #     edge_colour = "#000000"  # edge of bubble
                     # else:
-                    edge_colour = colour
+                    if colour == "#FFFFFF":
+                        edge_colour = "grey"
+                    else:
+                        edge_colour = colour
 
                     # multi = math.sqrt(pf_wlc/g_wlc)  # multiplier
                     # multi = (1 - (g_wlc / pf_wlc)) * 3
                     try:
-                        if len(p_list) >= 14:
+                        if len(p_list) >= 15:
+                            multi = (pf_wlc / g_wlc) ** (1.0)
+                        elif 14 >= len(p_list) >= 11:
                             multi = (pf_wlc / g_wlc) ** (1.0 / 2.0)  # square root
                         else:
-                            multi = (pf_wlc / g_wlc) ** (1.0 / 3.0)  # cube root
+                            if g_wlc/pf_wlc >= 0.33:
+                                multi = (pf_wlc / g_wlc) ** (1.0 / 2.0)  # cube root
+                            else:
+                                multi = (pf_wlc / g_wlc) ** (1.0 / 3.0)  # cube root
                         p_y_axis = g_y_axis + (g_radius * multi) * math.sin(
                             math.radians(ang_l[i])
                         )
