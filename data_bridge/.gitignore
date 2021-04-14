@@ -1,7 +1,0 @@
-../.idea/
-.venv/
-__pycache__
-.idea/
-**/.__pycache__/*
-.pytest_cache/
-.idea

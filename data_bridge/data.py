@@ -13,6 +13,7 @@ from typing import List, Dict, Union, Optional, Tuple
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 from datetime import timedelta, date
+
 #
 # from dateutil import parser
 import numpy as np
@@ -24,9 +25,11 @@ from pathlib import Path
 from docx import Document, table
 from docx.enum.section import WD_SECTION_START, WD_ORIENTATION
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+
 # from docx.oxml import parse_xml
 # from docx.oxml.ns import nsdecls
 from docx.shared import Pt, Cm, RGBColor, Inches
+
 # from matplotlib import cm
 # from matplotlib.patches import Wedge, Rectangle, Circle
 from openpyxl import load_workbook, Workbook
@@ -45,8 +48,23 @@ from analysis_engine.data import (
     concatenate_dates,
     convert_rag_text,
     rag_txt_list,
-    black_text, fill_colour_list, get_group, COLOUR_DICT, make_file_friendly, wd_heading, key_contacts, dca_table,
-    dca_narratives, open_word_doc, set_col_widths, make_columns_bold, change_text_size,
+    black_text,
+    fill_colour_list,
+    get_group,
+    COLOUR_DICT,
+    make_file_friendly,
+    wd_heading,
+    key_contacts,
+    dca_table,
+    dca_narratives,
+    open_word_doc,
+    set_col_widths,
+    make_columns_bold,
+    change_text_size,
+    get_iter_list,
+    dandelion_number_text,
+    cal_group_angle,
+    get_correct_p_data,
 )
 
 logging.basicConfig(
@@ -58,6 +76,14 @@ logger = logging.getLogger(__name__)
 
 
 class ProjectNameError(Exception):
+    pass
+
+
+class ProjectGroupError(Exception):
+    pass
+
+
+class ProjectStageError(Exception):
     pass
 
 
@@ -79,6 +105,9 @@ def get_master_data() -> List[
 ]:  # how specify a list of dictionaries?
     """Returns a list of dictionaries each containing quarter data"""
     master_data_list = [
+        project_data_from_master(
+            root_path / "core_data/cdg_master_4_2020.xlsx", 4, 2020
+        ),
         project_data_from_master(
             root_path / "core_data/cdg_master_3_2020.xlsx", 3, 2020
         ),
@@ -112,7 +141,9 @@ def place_data_into_new_master_format(master_data: Dict):  # throw away
 BASELINE_TYPES = {
     "Re-baseline this quarter": "quarter",
 }
-CDG_GROUP_DICT = {"Corporate Finance": "CF", "Group Finance": "GF"}
+# CDG_GROUP_DICT = {"Corporate Finance": "CF", "Group Finance": "GF"}
+CDG_DIR = ["CFPD", "GF", "Digital", "SCS"]
+DFT_STAGE = ["pre-SOBC", "SOBC", "OBC", "FBC"]
 BC_STAGE_DICT = {
     "Strategic Outline Case": "SOBC",
     "SOBC": "SOBC",
@@ -155,10 +186,10 @@ class Master:
         self.project_stage = {}
         self.quarter_list = []
         self.get_quarter_list()
-        self.get_baseline_data()
+        # self.get_baseline_data()
         self.check_project_information()
         self.get_project_abbreviations()
-        self.check_baselines()
+        # self.check_baselines()
         self.get_project_groups()
 
     def get_project_abbreviations(self) -> None:
@@ -218,14 +249,14 @@ class Master:
                         pass
                 for i in reversed(range(2)):
                     try:
-                    # if name in self.master_data[i].projects:
+                        # if name in self.master_data[i].projects:
                         approved_bc = self.master_data[i][name][b_type]
                         quarter = str(self.master_data[i].quarter)
                         lower_list.append((approved_bc, quarter, i))
                     # TODO tidy this
                     except IndexError:
-                    # else:
-                    #     quarter = str(self.master_data[i].quarter)
+                        # else:
+                        #     quarter = str(self.master_data[i].quarter)
                         lower_list.append((None, "LAST", None))
 
                 index_list = []
@@ -292,23 +323,28 @@ class Master:
         for i, master in enumerate(self.master_data):
             lower_dict = {}
             for p in master.projects:
-                try:
-                    dft_group = CDG_GROUP_DICT[
-                        master[p]["CDG Group"]
-                    ]  # different groups cleaned here
-                    stage = BC_STAGE_DICT[master[p]["CDG approval point"]]
-                    raw_list.append(("group", dft_group))
-                    raw_list.append(("stage", stage))
-                    lower_dict[p] = dict(raw_list)
-                    group_list.append(dft_group)
-                    stage_list.append(stage)
-                except KeyError:
-                    print(
-                        str(master.quarter)
-                        + ": "
-                        + str(p)
-                        + " has reported an incorrect DfT Group value. Amend"
+                dft_group = self.project_information[p]["Directorate"]  # different groups cleaned here
+                if dft_group is None:
+                    logger.critical(
+                        str(p) + " does not have a Group value in the project information document."
                     )
+                    raise ProjectGroupError(
+                        "Program stopping as this could cause a crash. Please check project Group info."
+                    )
+                if dft_group not in CDG_DIR:
+                    logger.critical(
+                        str(p) + " Group value is " + str(dft_group) + " . This is not a recognised group"
+                    )
+                    raise ProjectGroupError(
+                        "Program stopping as this could cause a crash. Please check project Group info."
+                    )
+                stage = BC_STAGE_DICT[master[p]["CDG approval point"]]
+                raw_list.append(("group", dft_group))
+                raw_list.append(("stage", stage))
+                lower_dict[p] = dict(raw_list)
+                group_list.append(dft_group)
+                stage_list.append(stage)
+
             raw_dict[str(master.quarter)] = lower_dict
 
         group_list = list(set(group_list))
@@ -323,19 +359,15 @@ class Master:
                     p_group = raw_dict[quarter][p]["group"]
                     if p_group == group_type:
                         g_list.append(p)
-                # messaging to clean up group data.
-                # TODO wrap into system messaging
-                if group_type is None or group_type == "DfT":
-                    if g_list:
-                        for x in g_list:
-                            print(
-                                str(quarter)
-                                + " "
-                                + str(x)
-                                + " DfT Group data needs cleaning. Currently "
-                                + str(group_type)
-                            )
                 lower_g_dict[group_type] = g_list
+
+            # Removed as Tier projects unlikely to be on gmpp
+            # gmpp_list = []
+            # for p in self.master_data[i].projects:
+            #     gmpp = self.master_data[i].data[p]["GMPP - IPA ID Number"]
+            #     if gmpp is not None:
+            #         gmpp_list.append(p)
+            #     lower_g_dict["GMPP"] = gmpp_list
 
             group_dict[quarter] = lower_g_dict
 
@@ -348,18 +380,18 @@ class Master:
                     p_stage = raw_dict[quarter][p]["stage"]
                     if p_stage == stage_type:
                         s_list.append(p)
-                # messaging to clean up group data.
-                # TODO wrap into system messaging
                 if stage_type is None:
                     if s_list:
-                        for x in s_list:
-                            print(
-                                str(quarter)
-                                + " "
-                                + str(x)
-                                + " IPDC stage data needs cleaning. Currently "
-                                + str(stage_type)
-                            )
+                        if quarter == self.current_quarter:
+                            for x in s_list:
+                                logger.critical(str(x) + " has no IPDC stage date")
+                                raise ProjectStageError("Programme stopping as this could cause incomplete analysis")
+                        else:
+                            for x in s_list:
+                                logger.warning(
+                                    "In " + str(quarter) + " master " + str(x)
+                                    + " IPDC stage data is currently None. Please amend."
+                                )
                 lower_s_dict[stage_type] = s_list
             stage_dict[quarter] = lower_s_dict
 
@@ -371,6 +403,143 @@ class Master:
         for master in self.master_data:
             output_list.append(str(master.quarter))
         self.quarter_list = output_list
+
+
+class CostData:
+    def __init__(self, master: Master, **kwargs):
+        self.master = master
+        self.baseline_type = "ipdc_costs"
+        self.kwargs = kwargs
+        self.start_group = []
+        self.group = []
+        self.iter_list = []
+        self.c_totals = {}
+        self.wlc_dict = {}
+        self.wlc_change = {}
+        # self.stack_p = {}
+        self.get_cost_totals()
+        # self.get_wlc_data()
+        # self.get_stackplot_data()
+
+    def get_cost_totals(self) -> None:
+        """Returns lists containing the sum total of group (of projects) costs,
+        sliced in different ways. Cumbersome for loop used at the moment, but
+        is the least cumbersome loop I could design!"""
+
+        self.iter_list = get_iter_list(self.kwargs, self.master)
+        self.start_group = get_group(self.master, self.iter_list[0], self.kwargs)
+        lower_dict = {}
+
+        for tp in self.iter_list:
+            self.group = get_group(self.master, tp, self.kwargs)
+            profiled = 0
+            for project_name in self.group:
+                print(project_name)
+                p_data = get_correct_p_data(
+                    self.kwargs, self.master, self.baseline_type, project_name, tp
+                )
+                try:
+                    profiled += p_data["Total Forecast"]
+                except TypeError:
+                    pass
+
+            lower_dict[tp] = {
+                "total": profiled,
+            }
+
+        self.c_totals = lower_dict
+
+    def get_wlc_data(self) -> None:
+        """central point in code which
+        calculates the quarters total
+        filters projects by group in order of size wlc"""
+        self.iter_list = get_iter_list(self.kwargs, self.master)
+        wlc_dict = {}
+        for tp in self.iter_list:
+            #  for need groups of groups.  Not consistent with steps for
+            #  other functions in this class. currently only in use for dandelion
+            if "group" in self.kwargs:
+                self.group = self.kwargs["group"]
+            elif "stage" in self.kwargs:
+                self.group = self.kwargs["stage"]
+            wlc_dict = {}
+            p_total = 0  # portfolio total
+
+            for i, g in enumerate(self.group):
+                l_group = get_group(self.master, tp, self.kwargs, i)  # lower group
+                g_total = 0
+                l_g_l = []  # lower group list
+                for p in l_group:
+                    p_data = get_correct_p_data(
+                        self.kwargs, self.master, self.baseline_type, p, tp
+                    )
+                    wlc = p_data["Total Forecast"]
+                    if isinstance(wlc, (float, int)) and wlc is not None and wlc != 0:
+                        if wlc > 50000:
+                            logger.info(
+                                tp
+                                + ", "
+                                + str(p)
+                                + " is £"
+                                + str(round(wlc))
+                                + " please check this is correct. For now analysis_engine has recorded it as £0"
+                            )
+                        # wlc_dict[p] = wlc
+                    if wlc == 0:
+                        logger.info(
+                            tp
+                            + ", "
+                            + str(p)
+                            + " wlc is currently £"
+                            + str(wlc)
+                            + " note this is key information that should be provided by the project"
+                        )
+                        # wlc_dict[p] = wlc
+                    if wlc is None:
+                        logger.info(
+                            tp
+                            + ", "
+                            + str(p)
+                            + " wlc is currently None note this is key information that should be provided by the project"
+                        )
+                        wlc = 0
+
+                    l_g_l.append((wlc, p))
+                    g_total += wlc
+
+                wlc_dict[g] = list(reversed(sorted(l_g_l)))
+                p_total += g_total
+
+            wlc_dict["total"] = p_total
+            wlc_dict[tp] = wlc_dict
+
+        self.wlc_dict = wlc_dict
+
+    def calculate_wlc_change(self) -> None:
+        wlc_change_dict = {}
+        for i, tp in enumerate(self.wlc_dict.keys()):
+            p_wlc_change_dict = {}
+            for p in self.wlc_dict[tp].keys():
+                wlc_one = self.wlc_dict[tp][p]
+                try:
+                    wlc_two = self.wlc_dict[self.iter_list[i + 1]][p]
+                    try:
+                        percentage_change = int(((wlc_one - wlc_two) / wlc_one) * 100)
+                        p_wlc_change_dict[p] = percentage_change
+                    except ZeroDivisionError:
+                        logger.info(
+                            "As "
+                            + str(p)
+                            + " has no wlc total figure for "
+                            + tp
+                            + " change has been calculated as zero"
+                        )
+                except IndexError:  # handles NoneTypes.
+                    pass
+
+            wlc_change_dict[tp] = p_wlc_change_dict
+
+        self.wlc_change = wlc_change_dict
 
 
 def overall_dashboard(master: Master, wb: Workbook) -> Workbook:
@@ -479,7 +648,9 @@ def overall_dashboard(master: Master, wb: Workbook) -> Workbook:
                 pass
 
             """vfm category now"""
-            vfm_cat = master.master_data[0].data[project_name]["VfM Category single entry"]
+            vfm_cat = master.master_data[0].data[project_name][
+                "VfM Category single entry"
+            ]
             # if (
             #     master.master_data[0].data[project_name]["VfM Category single entry"]
             #     is None
@@ -584,7 +755,7 @@ def overall_dashboard(master: Master, wb: Workbook) -> Workbook:
             try:
                 last_change = (current - last_quarter).days
                 if last_change == 0:
-                    ws.cell(row=row_num, column=10).value = '-'
+                    ws.cell(row=row_num, column=10).value = "-"
                 else:
                     ws.cell(row=row_num, column=10).value = plus_minus_days(last_change)
                 if last_change is not None and last_change > 46:
@@ -596,7 +767,7 @@ def overall_dashboard(master: Master, wb: Workbook) -> Workbook:
             try:
                 bl_change = (current - bl).days
                 if bl_change == 0:
-                    ws.cell(row=row_num, column=11).value = '-'
+                    ws.cell(row=row_num, column=11).value = "-"
                 else:
                     ws.cell(row=row_num, column=11).value = plus_minus_days(bl_change)
                 if bl_change is not None and bl_change > 85:
@@ -685,6 +856,115 @@ def overall_dashboard(master: Master, wb: Workbook) -> Workbook:
     return wb
 
 
+# class DandelionDataOLD:
+#     def __init__(self, master: Master, **kwargs):
+#         self.master = master
+#         self.kwargs = kwargs
+#         self.baseline_type = "ipdc_costs"
+#         self.group = []
+#         self.iter_list = []
+#         self.d_data = {}
+#         self.d_list = []
+#         self.get_data()
+#
+#     def get_data(self):
+#         self.group = self.master.master_data[0].projects
+#         input_g_list = ["CF", "GF"]  # first outer circle
+#         # input_g_list = ["FBC", "OBC", "SOBC", "pre-SOBC"]  # first outer circle
+#         # cal group angle
+#         if len(input_g_list) == 2:
+#             g_ang_list = [0, 225, 315]
+#         # g_ang = 270/len(input_g_list)  # group angle
+#         # g_ang_list = []
+#         # for i in range(6):
+#         #     g_ang_list.append(g_ang * i)
+#         # del g_ang_list[4]
+#
+#         dft_g_list = []
+#         dft_g_dict = {}
+#         dft_l_group_dict = {}
+#         p_total = 0  # portfolio total
+#         for i, g in enumerate(input_g_list):
+#             dft_l_group = self.master.dft_groups["Q3 20/21"][g]
+#             g_total = 0
+#             dft_l_group_list = []
+#             for p in dft_l_group:
+#                 p_data = self.master.master_data[0].data[p]
+#                 b_size = p_data["Total Forecast"]
+#                 if b_size is None:
+#                     b_size = 25
+#                 rag = p_data["Departmental DCA"]
+#                 colour = COLOUR_DICT[convert_rag_text(rag)]
+#                 g_total += b_size
+#                 dft_l_group_list.append((math.sqrt(b_size), colour, self.master.abbreviations[p]['abb']))
+#             # group data
+#             x_axis = 0 + 120 * math.cos(math.radians(g_ang_list[i + 1]))
+#             y_axis = 0 + 100 * math.sin(math.radians(g_ang_list[i + 1]))
+#             # list is tuple axis point, bubble size, colour, line style, line color, text position
+#             dft_g_list.append(((x_axis, y_axis),
+#                                math.sqrt(g_total),
+#                                '#a0c1d5',
+#                                g,
+#                                'dashed',
+#                                'grey',
+#                                ('center', 'center')))
+#             dft_g_dict[g] = [(x_axis, y_axis), math.sqrt(g_total)/3]  # used for placement of circles
+#             # project data
+#             dft_l_group_dict[g] = list(reversed(sorted(dft_l_group_list)))
+#             #portfolio data
+#             p_total += g_total
+#         dft_g_list.append(((0, 0), math.sqrt(p_total), '#a0c1d5', "CDG Portfolio", "dashed", "grey", ('center', 'center')))
+#
+#         for g in dft_l_group_dict.keys():
+#             lg = dft_l_group_dict[g]  # local group
+#             ang = 360/len(lg)
+#             ang_list = []
+#             for i in range(len(lg)+1):
+#                 ang_list.append(ang*i)
+#             for i, p in enumerate(lg):
+#                 a = dft_g_dict[g][0][0]
+#                 b = dft_g_dict[g][0][1]
+#                 if len(lg) <= 8:
+#                     x_axis = a + (dft_g_dict[g][1] + 20) * math.cos(math.radians(ang_list[i+1]))
+#                     y_axis = b + (dft_g_dict[g][1] + 20) * math.sin(math.radians(ang_list[i+1]))
+#                 else:
+#                     x_axis = a + (dft_g_dict[g][1] + 40) * math.cos(math.radians(ang_list[i + 1]))
+#                     y_axis = b + (dft_g_dict[g][1] + 40) * math.sin(math.radians(ang_list[i + 1]))
+#                 b_size = p[0]
+#                 colour = p[1]
+#                 name = p[2]
+#                 if 280 >= ang_list[i+1] >= 80:
+#                     text_angle = ('right', 'bottom')
+#                 if 100 >= ang_list[i+1] or ang_list[i+1] >= 260:
+#                     text_angle = ('left', 'bottom')
+#                 if 279 >= ang_list[i+1] >= 261:
+#                     text_angle = ('center', 'top')
+#                 if 99 >= ang_list[i+1] >= 81:
+#                     text_angle = ('center', 'bottom')
+#                 dft_g_list.append(((x_axis, y_axis), b_size, colour, name, "solid", colour, text_angle))
+#
+#         self.d_list = dft_g_list
+
+
+def get_dandelion_type_total(
+        master: Master, tp: str, g: str or List[str], kwargs
+) -> int or str:  # Note no **kwargs as existing kwargs dict passed in
+    if "type" in kwargs:
+        if kwargs["type"] == "remaining":
+            cost = CostData(master, quarter=[tp], group=[g])  # group costs data
+            return cost.c_totals[tp]["prof"] + cost.c_totals[tp]["unprof"]
+        if kwargs["type"] == "spent":
+            cost = CostData(master, quarter=[tp], group=[g])  # group costs data
+            return cost.c_totals[tp]["spent"]
+        # if kwargs["type"] == "benefits":
+        #     benefits = BenefitsData(master, quarter=[tp], group=[g])
+        #     return benefits.b_totals[tp]["total"]
+
+    else:
+        cost = CostData(master, **kwargs)  # group costs data
+        return cost.c_totals[tp]["total"]
+
+
 class DandelionData:
     def __init__(self, master: Master, **kwargs):
         self.master = master
@@ -693,123 +973,298 @@ class DandelionData:
         self.group = []
         self.iter_list = []
         self.d_data = {}
-        self.d_list = []
         self.get_data()
 
     def get_data(self):
-        self.group = self.master.master_data[0].projects
-        input_g_list = ["CF", "GF"]  # first outer circle
-        # input_g_list = ["FBC", "OBC", "SOBC", "pre-SOBC"]  # first outer circle
-        # cal group angle
-        if len(input_g_list) == 2:
-            g_ang_list = [0, 225, 315]
-        # g_ang = 270/len(input_g_list)  # group angle
-        # g_ang_list = []
-        # for i in range(6):
-        #     g_ang_list.append(g_ang * i)
-        # del g_ang_list[4]
+        self.iter_list = get_iter_list(self.kwargs, self.master)
+        for tp in self.iter_list:
+            #  for dandelion need groups of groups.
+            if "group" in self.kwargs:
+                self.group = self.kwargs["group"]
+            elif "stage" in self.kwargs:
+                self.group = self.kwargs["stage"]
 
-        dft_g_list = []
-        dft_g_dict = {}
-        dft_l_group_dict = {}
-        p_total = 0  # portfolio total
-        for i, g in enumerate(input_g_list):
-            dft_l_group = self.master.dft_groups["Q3 20/21"][g]
-            g_total = 0
-            dft_l_group_list = []
-            for p in dft_l_group:
-                p_data = self.master.master_data[0].data[p]
-                b_size = p_data["Total Forecast"]
-                if b_size is None:
-                    b_size = 25
-                rag = p_data["Departmental DCA"]
-                colour = COLOUR_DICT[convert_rag_text(rag)]
-                g_total += b_size
-                dft_l_group_list.append((math.sqrt(b_size), colour, self.master.abbreviations[p]['abb']))
-            # group data
-            x_axis = 0 + 120 * math.cos(math.radians(g_ang_list[i + 1]))
-            y_axis = 0 + 100 * math.sin(math.radians(g_ang_list[i + 1]))
-            # list is tuple axis point, bubble size, colour, line style, line color, text position
-            dft_g_list.append(((x_axis, y_axis),
-                               math.sqrt(g_total),
-                               '#a0c1d5',
-                               g,
-                               'dashed',
-                               'grey',
-                               ('center', 'center')))
-            dft_g_dict[g] = [(x_axis, y_axis), math.sqrt(g_total)/3]  # used for placement of circles
-            # project data
-            dft_l_group_dict[g] = list(reversed(sorted(dft_l_group_list)))
-            #portfolio data
-            p_total += g_total
-        dft_g_list.append(((0, 0), math.sqrt(p_total), '#a0c1d5', "CDG Portfolio", "dashed", "grey", ('center', 'center')))
+            if len(self.group) == 5:
+                g_ang_l = [260, 310, 360, 50, 100]  # group angle list
+            if len(self.group) == 4:
+                g_ang_l = [260, 326, 32, 100]
+            if len(self.group) == 3:
+                g_ang_l = [280, 360, 80]
+            if len(self.group) == 2:
+                g_ang_l = [290, 70]
+            if len(self.group) == 1:
+                pass
+            g_d = {}  # group dictionary. first outer circle.
+            l_g_d = {}  # lower group dictionary
 
-        for g in dft_l_group_dict.keys():
-            lg = dft_l_group_dict[g]  # local group
-            ang = 360/len(lg)
-            ang_list = []
-            for i in range(len(lg)+1):
-                ang_list.append(ang*i)
-            for i, p in enumerate(lg):
-                a = dft_g_dict[g][0][0]
-                b = dft_g_dict[g][0][1]
-                if len(lg) <= 8:
-                    x_axis = a + (dft_g_dict[g][1] + 20) * math.cos(math.radians(ang_list[i+1]))
-                    y_axis = b + (dft_g_dict[g][1] + 20) * math.sin(math.radians(ang_list[i+1]))
+            pf_wlc = get_dandelion_type_total(
+                self.master, tp, self.group, self.kwargs
+            )  # portfolio wlc
+            if "pc" in self.kwargs:  # pc portfolio colour
+                pf_colour = COLOUR_DICT[self.kwargs["pc"]]
+                pf_colour_edge = COLOUR_DICT[self.kwargs["pc"]]
+            else:
+                pf_colour = "#FFFFFF"
+                pf_colour_edge = "grey"
+            pf_text = "Portfolio\n" + dandelion_number_text(
+                pf_wlc
+            )  # option to specify pf name
+
+            ## center circle
+            g_d["portfolio"] = {
+                "axis": (0, 0),
+                "r": math.sqrt(pf_wlc),
+                "colour": pf_colour,
+                "text": pf_text,
+                "fill": "solid",
+                "ec": pf_colour_edge,
+                "alignment": ("center", "center"),
+            }
+
+            ## first outer circle
+            for i, g in enumerate(self.group):
+                self.kwargs["group"] = [g]
+                g_wlc = get_dandelion_type_total(self.master, tp, g, self.kwargs)
+                if len(self.group) > 1:
+                    y_axis = 0 + (
+                        (math.sqrt(pf_wlc) * 3.25) * math.sin(math.radians(g_ang_l[i]))
+                    )
+                    x_axis = 0 + (math.sqrt(pf_wlc) * 2.75) * math.cos(
+                        math.radians(g_ang_l[i])
+                    )
+                    g_text = g + "\n" + dandelion_number_text(g_wlc)  # group text
+                    g_d[g] = {
+                        "axis": (y_axis, x_axis),
+                        "r": math.sqrt(g_wlc),
+                        "wlc": g_wlc,
+                        "colour": "#FFFFFF",
+                        "text": g_text,
+                        "fill": "dashed",
+                        "ec": "grey",
+                        "alignment": ("center", "center"),
+                        "angle": g_ang_l[i],
+                    }
+
                 else:
-                    x_axis = a + (dft_g_dict[g][1] + 40) * math.cos(math.radians(ang_list[i + 1]))
-                    y_axis = b + (dft_g_dict[g][1] + 40) * math.sin(math.radians(ang_list[i + 1]))
-                b_size = p[0]
-                colour = p[1]
-                name = p[2]
-                if 280 >= ang_list[i+1] >= 80:
-                    text_angle = ('right', 'bottom')
-                if 100 >= ang_list[i+1] or ang_list[i+1] >= 260:
-                    text_angle = ('left', 'bottom')
-                if 279 >= ang_list[i+1] >= 261:
-                    text_angle = ('center', 'top')
-                if 99 >= ang_list[i+1] >= 81:
-                    text_angle = ('center', 'bottom')
-                dft_g_list.append(((x_axis, y_axis), b_size, colour, name, "solid", colour, text_angle))
+                    g_d = {}
+                    pf_wlc = g_wlc * 3
+                    g_text = g + "\n" + dandelion_number_text(g_wlc)  # group text
+                    g_d[g] = {
+                        "axis": (0, 0),
+                        "r": math.sqrt(g_wlc),
+                        "wlc": g_wlc,
+                        "colour": "#FFFFFF",
+                        "text": g_text,
+                        "fill": "dashed",
+                        "ec": "grey",
+                        "alignment": ("center", "center"),
+                    }
 
-        self.d_list = dft_g_list
+            ## second outer circle
+            for i, g in enumerate(self.group):
+                self.kwargs["group"] = [g]
+                group = get_group(self.master, tp, self.kwargs)  # lower group
+                p_list = []
+                for p in group:
+                    self.kwargs["group"] = [p]
+                    p_value = get_dandelion_type_total(
+                        self.master, tp, p, self.kwargs
+                    )  # project wlc
+                    p_list.append((p_value, p))
+                l_g_d[g] = list(reversed(sorted(p_list)))
+
+            for g in self.group:
+                g_wlc = g_d[g]["wlc"]
+                g_radius = g_d[g]["r"]
+                g_y_axis = g_d[g]["axis"][0]  # group y axis
+                g_x_axis = g_d[g]["axis"][1]  # group x axis
+                try:
+                    p_values_list, p_list = zip(*l_g_d[g])
+                except ValueError:  # handles no projects in l_g_d list
+                    continue
+                if len(p_list) > 3 or len(self.group) == 1:
+                    ang_l = cal_group_angle(360, p_list, all=True)
+                else:
+                    if len(p_list) == 1:
+                        ang_l = [g_d[g]["angle"]]
+                    if len(p_list) == 2:
+                        ang_l = [g_d[g]["angle"], g_d[g]["angle"] + 60]
+                    if len(p_list) == 3:
+                        ang_l = [
+                            g_d[g]["angle"],
+                            g_d[g]["angle"] + 60,
+                            g_d[g]["angle"] + 120,
+                        ]
+
+                for i, p in enumerate(p_list):
+                    p_value = p_values_list[i]
+                    p_data = get_correct_p_data(
+                        self.kwargs, self.master, self.baseline_type, p, tp
+                    )
+                    # change confidence type here
+                    # SRO Schedule Confidence
+                    # Departmental DCA
+                    # SRO Benefits RAG
+                    rag = p_data["Departmental DCA"]
+                    colour = COLOUR_DICT[convert_rag_text(rag)]  # bubble colour
+                    project_text = (
+                        self.master.abbreviations[p]["abb"]
+                        + "\n"
+                        + dandelion_number_text(p_value)
+                    )
+                    # No GMPP projects
+                    # if p in self.master.dft_groups[tp]["GMPP"]:
+                    #     edge_colour = "#000000"  # edge of bubble
+                    # else:
+                    edge_colour = colour
+
+                    # multi = math.sqrt(pf_wlc/g_wlc)  # multiplier
+                    # multi = (1 - (g_wlc / pf_wlc)) * 3
+                    try:
+                        if len(p_list) >= 14:
+                            multi = (pf_wlc / g_wlc) ** (1.0 / 2.0)  # square root
+                        else:
+                            multi = (pf_wlc / g_wlc) ** (1.0 / 3.0)  # cube root
+                        p_y_axis = g_y_axis + (g_radius * multi) * math.sin(
+                            math.radians(ang_l[i])
+                        )
+                        p_x_axis = g_x_axis + (g_radius * multi) * math.cos(
+                            math.radians(ang_l[i])
+                        )
+                    except ZeroDivisionError:
+                        p_y_axis = g_y_axis + 100 * math.sin(math.radians(ang_l[i]))
+                        p_x_axis = g_x_axis + 100 * math.cos(math.radians(ang_l[i]))
+
+                    if 185 >= ang_l[i] >= 175:
+                        text_angle = ("center", "top")
+                    if 5 >= ang_l[i] or 355 <= ang_l[i]:
+                        text_angle = ("center", "bottom")
+                    if 174 >= ang_l[i] >= 6:
+                        text_angle = ("left", "center")
+                    if 354 >= ang_l[i] >= 186:
+                        text_angle = ("right", "center")
+
+                    try:
+                        t_multi = (g_wlc / p_value) ** (1.0 / 4.0)
+                        # t_multi = (1 - (p_value/g_wlc)) * 2  # text multiplier
+                    except ZeroDivisionError:
+                        t_multi = 1
+                    yx_text_position = (
+                        p_y_axis
+                        + (math.sqrt(p_value) * t_multi)
+                        * math.sin(math.radians(ang_l[i])),
+                        p_x_axis
+                        + (math.sqrt(p_value) * t_multi)
+                        * math.cos(math.radians(ang_l[i])),
+                    )
+
+                    g_d[p] = {
+                        "axis": (p_y_axis, p_x_axis),
+                        "r": math.sqrt(p_value),
+                        "wlc": p_value,
+                        "colour": colour,
+                        "text": project_text,
+                        "fill": "solid",
+                        "ec": edge_colour,
+                        "alignment": text_angle,
+                        "tp": yx_text_position,
+                    }
+
+        self.d_data = g_d
 
 
-def make_a_dandelion_auto_cdg(dlion_data: DandelionData):
+def make_a_dandelion_auto(dl: DandelionData, **kwargs):
     fig, ax = plt.subplots()
-    ax.set_facecolor('#a0c1d5')
-    for c in range(len(dlion_data.d_list)):
-        circle = plt.Circle(dlion_data.d_list[c][0],
-                            radius=dlion_data.d_list[c][1],
-                            fc=dlion_data.d_list[c][2],  # face colour
-                            linestyle=dlion_data.d_list[c][4],
-                            ec=dlion_data.d_list[c][5])  # edge colour
+    fig.set_size_inches(18.5, 10.5)
+    # ax.set_facecolor('xkcd:salmon')  # TBC if face colour is required
+    # title = get_chart_title(dl_data, kwargs, "dandelion")
+    # plt.suptitle(title, fontweight="bold", fontsize=10)
+
+    for c in dl.d_data.keys():
+        circle = plt.Circle(
+            dl.d_data[c]["axis"],  # x, y position
+            radius=dl.d_data[c]["r"],
+            fc=dl.d_data[c]["colour"],  # face colour
+            # linestyle=dl.d_data[c]["fill"],
+            ec=dl.d_data[c]["ec"],  # edge colour
+            zorder=2,
+        )
         ax.add_patch(circle)
-        ax.annotate(dlion_data.d_list[c][3],
-                    xy=dlion_data.d_list[c][0],
-                    fontsize=6,
-                    horizontalalignment=dlion_data.d_list[c][6][0],
-                    verticalalignment=dlion_data.d_list[c][6][1])
-        # plt.gca().add_patch(circle)
+        try:
+            ax.annotate(
+                dl.d_data[c]["text"],  # text
+                xy=dl.d_data[c]["axis"],  # x, y position
+                xycoords="data",
+                xytext=dl.d_data[c]["tp"],  # text position
+                fontsize=6,
+                # textcoords="offset pixels",
+                horizontalalignment=dl.d_data[c]["alignment"][0],
+                verticalalignment=dl.d_data[c]["alignment"][1],
+                zorder=3,
+            )
+        except KeyError:
+            ax.annotate(
+                dl.d_data[c]["text"],  # text
+                xy=dl.d_data[c]["axis"],  # x, y position
+                fontsize=8,
+                horizontalalignment=dl.d_data[c]["alignment"][0],
+                verticalalignment=dl.d_data[c]["alignment"][1],
+                weight="bold",  # bold here as will be group text
+                zorder=3,
+            )
 
-    plt.axis('scaled')
-    plt.axis('off')
-    plt.show()
+    # place lines
+    line_clr = "#ececec"
+    line_style = "dashed"
+    for i, g in enumerate(dl.group):
+        dl.kwargs["group"] = [g]
+        ax.arrow(
+            0,
+            0,
+            dl.d_data[g]["axis"][0],
+            dl.d_data[g]["axis"][1],
+            fc=line_clr,
+            ec=line_clr,
+            # linestyle=line_style,
+            zorder=1,
+        )
 
-    return plt
+        lower_g = get_group(dl.master, dl.iter_list[0], dl.kwargs)
+        for p in lower_g:
+            ax.arrow(
+                dl.d_data[g]["axis"][0],
+                dl.d_data[g]["axis"][1],
+                dl.d_data[p]["axis"][0] - dl.d_data[g]["axis"][0],
+                dl.d_data[p]["axis"][1] - dl.d_data[g]["axis"][1],
+                fc=line_clr,
+                ec=line_clr,
+                # linestyle=line_style,
+                zorder=1,
+            )
+
+    # ax.axes.set_xticks([])
+    # ax.axes.set_yticks([])
+    plt.axis("scaled")
+    plt.axis("off")
+
+    if "chart" in kwargs:
+        if kwargs["chart"]:
+            plt.show()
+
+    return fig
 
 
 def convert_pdf_to_png():
     pages = convert_from_path(root_path / "output/dandelion.pdf", 500)
     for page in pages:
-        page.save(root_path / "output/dandelion.jpeg", 'JPEG')
+        page.save(root_path / "output/dandelion.jpeg", "JPEG")
 
 
 def compile_p_report_cdg(
-        doc: Document,
-        project_info: Dict[str, Union[str, int, date, float]],
-        master: Master,
-        project_name: str,
+    doc: Document,
+    project_info: Dict[str, Union[str, int, date, float]],
+    master: Master,
+    project_name: str,
 ) -> Document:
     wd_heading(doc, project_info, project_name)
     key_contacts(doc, master, project_name)
@@ -873,9 +1328,9 @@ def run_p_reports_cdg(master: Master, **kwargs) -> None:
 
 
 def project_report_meta_data(
-        doc: Document,
-        master: Master,
-        project_name: str,
+    doc: Document,
+    master: Master,
+    project_name: str,
 ):
     """Meta data table"""
     # doc.add_section(WD_SECTION_START.NEW_PAGE)
@@ -894,20 +1349,24 @@ def project_report_meta_data(
     hdr_cells[0].text = "WLC:"
     try:
         hdr_cells[1].text = (
-                "£"
-                + str(round(master.master_data[0].data[project_name]["Total Forecast"]))
-                + "m"
+            "£"
+            + str(round(master.master_data[0].data[project_name]["Total Forecast"]))
+            + "m"
         )
     except TypeError:
         hdr_cells[1].text = "TBC"
     hdr_cells[2].text = "Business Case"
-    hdr_cells[3].text = str(master.master_data[0].data[project_name]["CDG approval point"])
+    hdr_cells[3].text = str(
+        master.master_data[0].data[project_name]["CDG approval point"]
+    )
 
     row_cells = t.add_row().cells
     row_cells[0].text = "Income:"
     row_cells[1].text = ""
     row_cells[2].text = "VFM:"
-    row_cells[3].text = str(master.master_data[0].data[project_name]["VfM Category single entry"])
+    row_cells[3].text = str(
+        master.master_data[0].data[project_name]["VfM Category single entry"]
+    )
 
     # set column width
     column_widths = (Cm(4), Cm(3), Cm(4), Cm(3))
