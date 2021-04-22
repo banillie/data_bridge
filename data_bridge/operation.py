@@ -22,7 +22,7 @@ m = Master(get_master_data(), get_project_information())
 # db = overall_dashboard(m, db_m)
 # db.save(root_path / "output/cdg_dashboard_compiled.xlsx")
 
-CDG_DIR = ["CFPD", "GF", "SCS"]
+CDG_DIR = ["GF", "CFPD", "SCS"]
 # CDG_DIR = ["SCS"]
 
 # dandelion

@@ -1090,12 +1090,6 @@ class DandelionData:
                         ang_l = [g_d[g]["angle"]]
                     if len(p_list) == 2:
                         ang_l = [g_d[g]["angle"], g_d[g]["angle"] + 60]
-                    # if len(p_list) == 3:
-                    #     ang_l = [
-                    #         g_d[g]["angle"],
-                    #         g_d[g]["angle"] + 60,
-                    #         g_d[g]["angle"] + 120,
-                    #     ]
 
                 for i, p in enumerate(p_list):
                     p_value = p_values_list[i]
@@ -1113,6 +1107,8 @@ class DandelionData:
                         + "\n"
                         + dandelion_number_text(p_value)
                     )
+                    if p_value == 0:
+                        p_value = 2
                     # No GMPP projects
                     # if p in self.master.dft_groups[tp]["GMPP"]:
                     #     edge_colour = "#000000"  # edge of bubble
@@ -1126,7 +1122,7 @@ class DandelionData:
                     # multi = (1 - (g_wlc / pf_wlc)) * 3
                     try:
                         if len(p_list) >= 15:
-                            multi = (pf_wlc / g_wlc) ** (1.0)
+                            multi = (pf_wlc / g_wlc) ** (1.2)
                         elif 14 >= len(p_list) >= 11:
                             multi = (pf_wlc / g_wlc) ** (1.0 / 2.0)  # square root
                         else:
@@ -1205,7 +1201,7 @@ def make_a_dandelion_auto(dl: DandelionData, **kwargs):
                 xy=dl.d_data[c]["axis"],  # x, y position
                 xycoords="data",
                 xytext=dl.d_data[c]["tp"],  # text position
-                fontsize=6,
+                fontsize=7,
                 # textcoords="offset pixels",
                 horizontalalignment=dl.d_data[c]["alignment"][0],
                 verticalalignment=dl.d_data[c]["alignment"][1],
@@ -1215,7 +1211,7 @@ def make_a_dandelion_auto(dl: DandelionData, **kwargs):
             ax.annotate(
                 dl.d_data[c]["text"],  # text
                 xy=dl.d_data[c]["axis"],  # x, y position
-                fontsize=8,
+                fontsize=9,
                 horizontalalignment=dl.d_data[c]["alignment"][0],
                 verticalalignment=dl.d_data[c]["alignment"][1],
                 weight="bold",  # bold here as will be group text
